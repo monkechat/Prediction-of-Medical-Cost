@@ -1,0 +1,424 @@
+---
+title: "Team Project MLR"
+author: "Satyam Kumar"
+date: "2022-10-02"
+output:
+  html_document: default
+  word_document: default
+---
+
+## Improting The Dataset and Checking Missing Values.
+
+
+
+```{r}
+insurance <- read.csv("C:/Users/SATYAM KUMAR/OneDrive/Desktop/Group Project/insurance.csv")
+miss<-read.csv("C:/Users/SATYAM KUMAR/OneDrive/Desktop/Group Project/insurance.csv",na.strings = c("n.a.","?","NA","n/a","na","--","<NA>"))
+sum(is.na(miss))
+head(insurance)
+# This shows that there is no missing values in the data.
+```
+
+## Assigning Categorical Regressors Logical Values.
+
+```{r}
+Data=insurance
+male=vector() 
+for (i in 1:nrow(Data)) 
+  { if (Data$sex[i]=='male')
+  { 
+    male[i]=1 } 
+  else 
+  { male[i]=0 }
+}
+
+Data$male = male
+
+
+smokes=vector() 
+for (i in 1:nrow(Data)) 
+  { if (Data$smoker[i]=='yes') 
+    { smokes[i]=1 } 
+  else {smokes[i]=0 }
+  }
+
+Data$smokes=smokes
+
+
+
+southwest=vector() 
+for (i in 1:nrow(Data)) 
+  { if (Data$region[i]=="southwest")
+    { southwest[i]=1 }
+  else {southwest[i]=0 }
+  } 
+Data$southwest=southwest
+
+
+southeast=vector() 
+for (i in 1:nrow(Data))
+  { if
+(Data$region[i]=="southeast")
+    { southeast[i]=1 }
+  else {southeast[i]=0 }
+  } 
+Data$southeast=southeast
+
+
+northwest=vector()
+for (i in 1:nrow(Data)) 
+  { if (Data$region[i]=="northwest")
+    { northwest[i]=1 }
+  else {northwest[i]=0 }
+}
+
+Data$northwest=northwest
+
+
+head(Data)
+
+```
+
+## Deleting Columns No Longer Needed
+
+```{r}
+
+Data1=subset(Data,select=-c(sex,smoker,region))
+#Data obtained after removing categorical columns.
+head(Data1)
+
+library(dplyr)
+
+Data1 <- Data1 %>% relocate(charges, .after = northwest)
+
+head(Data1)
+```
+
+
+## Model Fitting
+
+
+```{r}
+library(lessR)
+
+model_00 <- lm(charges ~ age + male + bmi + children +
+smokes + southwest+southeast+northwest,data = Data1)
+
+model_00
+summary(model_00)
+
+#We found Male column and northwest column is not statistically significant.
+```
+
+
+## Detecting and Removing Influential Observations
+
+
+```{r}
+cd=cooks.distance(model_00)
+influential=as.numeric(names(cd)[(cd>4/1338)])
+
+sample_size=1338
+plot(cd,pch='*',cex=2,main='Influential Observations by Cooks Distance')
+abline(h=4/sample_size,col='red')
+text(x=1:length(cd)+1,y=cd,labels=ifelse(cd>4/sample_size,names(cd),""),col="red")
+
+Data3 <- Data1[-influential , ]# Data obtained after removing influential data.
+
+```
+
+
+## Training and Testing data
+
+
+```{r}
+ set.seed(1001)
+
+n_train <- round(0.8* nrow(Data3))
+
+train_indices <- sample(1:nrow(Data3), n_train)
+
+Data2 <- Data3[train_indices, ] 
+
+Data_test <- Data3[-train_indices, ]
+
+Data_train=Data2
+
+
+```
+
+## Fitting Model on Training Data
+
+```{r}
+mq <- lm(charges ~ age + male + bmi + children + smokes + southwest+southeast+northwest, data = Data2)
+
+summary(mq)
+
+# We found Male column is not statistically significant.
+```
+
+## Checking Assumptions on Trainig Data Model
+
+```{r}
+
+library(car)
+
+# Checking Multicollinearity
+
+vif(mq)
+
+## Since all VIF is less than 5 so there is no multicollinearity present in our model.
+
+# Detecting Autocorrelation
+
+durbinWatsonTest(mq,alternative = 'two.sided') 
+
+## Since p-value is greater than alpha so we accept null hypothesis and this shows that there is no serial autocoreelation in error terms.
+
+# Test for normality of Residuals.
+
+library(stats)
+
+shapiro.test(rstudent(mq))
+
+## Since P value< alpha so null hypothesis is rejected and assumption of normality of errors has been violated.
+
+# Check for Homoscedasticity
+
+library(lmtest)
+
+bptest(mq)
+
+## Since P value< alpha so assumption of Homoscedasticity is violated.
+
+```
+
+## Plots on Training Data
+
+```{r}
+library(ggplot2)
+  library(ggpubr)
+  library(dplyr)
+p1=plot(mq, which=1, col=c("blue")) #Plot is like outward opening funnel. This indicates variance of residual is not constant.(Why?)
+
+p2=plot(mq, which=2, col=c('red'))
+
+# Checking which variable is responsible for such pattern in p1.
+## First we check for numerical variables.
+
+##Q Why we are not considering categorical variables.
+
+q1=ggplot(aes(x=Data_train$age,y=rstudent(mq)),data=mq)+geom_point()+geom_smooth(se=FALSE)+geom_hline(yintercept = 0)+labs(x='age',y='residuals')
+
+q2=ggplot(aes(x=Data_train$bmi,y=rstudent(mq)),data=mq)+geom_point()+geom_smooth(se=FALSE)+geom_hline(yintercept = 0)+labs(x='bmi',y='residuals')
+
+q3=ggplot(aes(x=Data_train$children,y=rstudent(mq)),data=mq)+geom_point()+geom_smooth(se=FALSE)+geom_hline(yintercept = 0)+labs(x='children',y='residuals')
+
+
+ggarrange(q1,q2,q3,nrow=2,ncol=2)
+
+# BMI vs residual plot is similar to actual fitted plot.
+
+# We plotted the graph between the charges BMI and smoker and non smoker we observe that we have two clear clusters for smokers , one cluster is for less than 30 bmi and another is for greater than 30 bmi. So we dicided to split the train data into two parts accordingly.
+
+
+
+```
+
+
+## Splitting of Train Dataset
+
+
+```{r}
+
+Data2_smokes=Data2[Data2$smokes==1,]
+
+nrow(Data2_smokes)
+
+Data2_non_smokes=Data2[Data2$smokes==0,]
+
+nrow(Data2_non_smokes)
+
+Data2_smokes_highbmi=Data2_smokes[Data2_smokes$bmi>29.9,] 
+
+nrow(Data2_smokes_highbmi)
+
+Data2_smokes_lowbmi=Data2_smokes[Data2_smokes$bmi<=29.9,]
+Data2_smokes_lowbmi[,9]=log((Data2_smokes_lowbmi$charges),base=exp(1))
+
+nrow(Data2_smokes_lowbmi)
+
+```
+
+
+
+
+
+
+## Fitting models in a Splitted Data
+
+```{r}
+
+# Smokers and High BMI
+
+m2=lm(charges~age + male + bmi + children +southwest+southeast+northwest,data=Data2_smokes_highbmi)
+
+summary(m2)
+
+# Smokers with Low BMI
+
+m3=lm(charges~age + male + bmi + children +southwest+southeast+northwest,data=Data2_smokes_lowbmi)
+
+summary(m3)
+
+
+# Non Smokers
+
+m4=lm(charges~age + male +bmi + children +southwest+southeast+northwest,data=Data2_non_smokes)
+
+summary(m4)
+
+
+```
+
+
+## Plots For Checking Assumptions of AIC.
+
+```{r}
+p3=plot(m2, which=1, col=c("blue"))
+p4=plot(m3, which=1, col=c("blue"))
+p5=plot(m4, which=1, col=c("blue"))
+
+p6=plot(m2, which=2, col=c('red'))
+p7=plot(m3, which=2, col=c('red'))
+p8=plot(m4, which=2, col=c('red'))
+
+```
+
+
+## Variable Selection Using AIC Method
+
+```{r}
+
+library(MASS)
+
+stepAIC(m2,direction = 'both')
+
+stepAIC(m3, direction = 'both') 
+
+stepAIC(m4, direction = 'both')
+
+m5= lm(formula = charges ~ age + bmi + northwest, data = Data2_smokes_highbmi)
+
+summary(m5)
+
+m6=lm(formula = charges ~ age, data = Data2_smokes_lowbmi)
+
+summary(m6)
+
+m7=lm(formula = charges ~ age + male + bmi + children + southwest + 
+    southeast + northwest, data = Data2_non_smokes)
+
+summary(m7) 
+
+```
+
+
+## Plots on New Models
+
+```{r}
+plot(m5, which=1, col=c('blue'))
+
+plot(m5, which=2, col=c('red'))
+
+plot(m5, which=3, col=c('orange'))
+
+plot(m5, which=5, col=c('green'))
+
+plot(m6, which=1, col=c('blue'))
+
+plot(m6, which=2, col=c('red'))
+
+plot(m6, which=3, col=c('orange'))
+
+plot(m6, which=5, col=c('green'))
+
+plot(m7, which=1, col=c('blue')) 
+
+plot(m7, which=2, col=c('red'))
+
+plot(m7, which=3, col=c('orange'))
+
+```
+
+## Assumptions For Model
+
+```{r}
+durbinWatsonTest(m5)
+
+durbinWatsonTest(m6)
+
+durbinWatsonTest(m7)
+
+library(lmtest)
+
+bptest(m5)
+
+bptest(m6)
+
+bptest(m7)
+
+library(olsrr)
+
+ols_plot_resid_hist(m5)
+
+ols_plot_resid_hist(m6)
+
+ols_plot_resid_hist(m7)
+
+#library(stats) 
+
+#shapiro.test(rstudent(m5))
+
+#shapiro.test(rstudent(m6))
+
+#shapiro.test(rstudent(m7))
+
+
+```
+
+#Actual vs Fitted Plot for Test Data
+
+```{r}
+Data_smoker_test=Data_test[Data_test$smokes==1,]
+
+nrow(Data_smoker_test)
+
+Data_nonsmoker_test=Data_test[Data_test$smokes==0,] 
+
+nrow(Data_nonsmoker_test)
+
+Data_smoker_highbmi_test=Data_smoker_test[Data_smoker_test$bmi>29.9,] 
+
+nrow(Data_smoker_highbmi_test)
+
+Data_smoker_lowbmi_test=Data_smoker_test[Data_smoker_test$bmi<=29.9,]
+
+nrow(Data_smoker_lowbmi_test) 
+
+
+
+p1=predict(m5,Data_smoker_highbmi_test)
+p1
+
+ggplot(data=Data_smoker_highbmi_test,aes(x=charges,y=p1))+geom_point()+geom_abline(slope = 1, intercept = 0)
+
+p2=predict(m6,Data_smoker_lowbmi_test)
+
+ggplot(data=Data_smoker_lowbmi_test,aes(x=charges,y=p2))+geom_point()+geom_abline(slope = 1, intercept = 0)
+
+p3=predict(m7,Data_nonsmoker_test)
+
+ggplot(data=Data_nonsmoker_test,aes(x=charges,y=p3))+geom_point()+geom_abline(slope = 1, intercept = 0)
+
+```
